@@ -185,10 +185,166 @@ ln -s ../next/dist/bin/next node_modules/.bin/next
 
 ---
 
-## 🔄 次のステップ: Step 2 - 堅牢なデータベース設計
+## ✅ Step 2: 堅牢なデータベース設計 (完了)
+
+### 1. データベーススキーマSQL作成
+**実施日**: 2025-12-31
+
+**作成ファイル**:
+- `supabase/migrations/001_initial_schema.sql` - データベーススキーマSQL
+- `supabase/README.md` - SQL実行手順書
+
+**テーブル構成**:
+```
+auth.users (Supabase Auth)
+    │
+    ├─→ profiles (ユーザープロフィール)
+    │    ├─ id (UUID, PK, FK to auth.users)
+    │    ├─ display_name (TEXT)
+    │    ├─ avatar_url (TEXT)
+    │    ├─ created_at (TIMESTAMPTZ)
+    │    └─ updated_at (TIMESTAMPTZ)
+    │
+    ├─→ recipes (レシピ本体)
+    │    ├─ id (UUID, PK)
+    │    ├─ user_id (UUID, FK to profiles)
+    │    ├─ title (TEXT, NOT NULL)
+    │    ├─ url (TEXT)
+    │    ├─ image_url (TEXT)
+    │    ├─ description (TEXT)
+    │    ├─ memo (TEXT)
+    │    ├─ is_manual (BOOLEAN)
+    │    ├─ created_at (TIMESTAMPTZ)
+    │    └─ updated_at (TIMESTAMPTZ)
+    │
+    └─→ tags (タグマスタ)
+         ├─ id (UUID, PK)
+         ├─ user_id (UUID, FK to profiles)
+         ├─ name (TEXT, NOT NULL)
+         └─ created_at (TIMESTAMPTZ)
+
+recipe_tags (中間テーブル)
+    ├─ recipe_id (UUID, FK to recipes, PK)
+    ├─ tag_id (UUID, FK to tags, PK)
+    └─ created_at (TIMESTAMPTZ)
+```
+
+### 2. Row Level Security (RLS) 設定
+**実施内容**:
+全テーブルでRLSを有効化し、`auth.uid()`でユーザーデータを分離
+
+**RLSポリシー**:
+- ✅ **profiles**: 自分のプロフィールのみ読み書き可能
+  - `Users can view their own profile` (SELECT)
+  - `Users can insert their own profile` (INSERT)
+  - `Users can update their own profile` (UPDATE)
+
+- ✅ **recipes**: 自分のレシピのみ読み書き可能
+  - `Users can view their own recipes` (SELECT)
+  - `Users can insert their own recipes` (INSERT)
+  - `Users can update their own recipes` (UPDATE)
+  - `Users can delete their own recipes` (DELETE)
+
+- ✅ **tags**: 自分のタグのみ読み書き可能
+  - `Users can view their own tags` (SELECT)
+  - `Users can insert their own tags` (INSERT)
+  - `Users can update their own tags` (UPDATE)
+  - `Users can delete their own tags` (DELETE)
+
+- ✅ **recipe_tags**: 自分のレシピに紐づくタグのみ操作可能
+  - `Users can view their own recipe tags` (SELECT)
+  - `Users can insert their own recipe tags` (INSERT)
+  - `Users can delete their own recipe tags` (DELETE)
+
+### 3. インデックス作成
+**パフォーマンス最適化のため以下のインデックスを作成**:
+
+**recipesテーブル**:
+- `idx_recipes_user_id` - user_id検索
+- `idx_recipes_created_at` - 作成日時降順
+- `idx_recipes_user_created` - user_id + created_at複合インデックス
+
+**tagsテーブル**:
+- `idx_tags_user_id` - user_id検索
+- `idx_tags_name` - タグ名検索
+
+**recipe_tagsテーブル**:
+- `idx_recipe_tags_recipe_id` - recipe_id検索
+- `idx_recipe_tags_tag_id` - tag_id検索
+
+### 4. データベーストリガー
+**自動化機能**:
+
+1. **新規ユーザー登録時のプロフィール自動作成**
+   ```sql
+   CREATE TRIGGER on_auth_user_created
+     AFTER INSERT ON auth.users
+     FOR EACH ROW
+     EXECUTE FUNCTION public.handle_new_user();
+   ```
+   - auth.usersに新規ユーザーが作成されると、自動的にprofilesレコードを作成
+   - display_nameはメールアドレスの@前部分をデフォルト値として使用
+
+2. **タイムスタンプ自動更新**
+   ```sql
+   CREATE TRIGGER update_profiles_updated_at
+     BEFORE UPDATE ON public.profiles
+     FOR EACH ROW
+     EXECUTE FUNCTION update_updated_at_column();
+   ```
+   - profiles, recipesテーブルのupdated_atを自動更新
+
+### 5. TypeScript型定義の生成
+**実施内容**:
+```bash
+npm run update-types
+```
+
+**生成ファイル**:
+- `src/types/supabase.ts` - Supabase型定義
+
+**型定義の適用**:
+- `src/lib/supabase.ts` - `createBrowserClient<Database>`
+- `src/lib/supabase-server.ts` - `createServerClient<Database>`
+
+**利点**:
+- データベース操作の型安全性を確保
+- IDEの補完が効くようになる
+- `any`を使用せずに開発可能
+
+### 6. 動作確認
+**テストスクリプト作成**:
+- `scripts/test-database-schema.ts` - データベーススキーマ確認テスト
+
+**実行方法**:
+```bash
+npm run test:db
+```
+
+**テスト結果**:
+```
+✅ profilesテーブル: 正常
+✅ recipesテーブル: 正常
+✅ tagsテーブル: 正常
+✅ recipe_tagsテーブル: 正常
+```
+
+### package.json追加スクリプト
+```json
+{
+  "scripts": {
+    "test:db": "tsx scripts/test-database-schema.ts",
+    "update-types": "npx supabase gen types typescript --project-id ibvucbwkdnqtlagwfpvd > src/types/supabase.ts"
+  }
+}
+```
+
+---
+
+## 🔄 次のステップ: Step 3 - 認証基盤 (Supabase Auth)
 
 **実施予定内容**:
-1. Supabaseデータベースにテーブル作成SQL実行
-2. RLS (Row Level Security) ポリシー設定
-3. インデックス作成
-4. Supabase型定義の生成 (`npm run update-types`)
+1. Email/Passwordによるサインアップ・ログイン実装
+2. 認証フォームコンポーネント作成
+3. middleware.tsで未認証ユーザーのリダイレクト
+4. テスト用ユーザー作成と動作確認
