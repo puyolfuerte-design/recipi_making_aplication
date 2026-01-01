@@ -341,10 +341,127 @@ npm run test:db
 
 ---
 
-## 🔄 次のステップ: Step 3 - 認証基盤 (Supabase Auth)
+## ✅ Step 3: 認証基盤 (Supabase Auth) (完了)
+
+### 1. 認証用Server Actionsの作成
+**実施日**: 2025-12-31
+
+**作成ファイル**:
+- `src/services/auth.ts` - 認証ロジック (Server Actions)
+
+**実装機能**:
+- ✅ `signUp()` - ユーザー登録
+- ✅ `signIn()` - ログイン
+- ✅ `signOut()` - ログアウト
+- ✅ `getCurrentUser()` - 現在のユーザー情報取得
+
+**特徴**:
+- Zodによるバリデーション (Zod v4対応)
+- Server Actionsでサーバーサイド実行
+- 型安全なエラーハンドリング
+
+### 2. 認証フォームコンポーネントの作成
+
+**作成ファイル**:
+- `src/components/features/auth/auth-form.tsx` - 認証フォームコンポーネント
+
+**特徴**:
+- Client Componentとして実装
+- `useActionState`でServer Actionsと連携
+- ログイン/サインアップ両対応
+- リアルタイムバリデーション
+- ローディング状態の表示
+
+### 3. 認証ページの作成
+
+**作成ファイル**:
+- `src/app/login/page.tsx` - ログインページ
+- `src/app/signup/page.tsx` - 新規登録ページ
+- `src/app/page.tsx` - ホームページ (認証後)
+
+**機能**:
+- ✅ ログインフォーム
+- ✅ 新規登録フォーム
+- ✅ ページ間リンク
+- ✅ 認証済みユーザー情報表示
+- ✅ ログアウトボタン
+
+### 4. Middleware実装 (認証ガード)
+
+**作成ファイル**:
+- `src/middleware.ts` - 認証ミドルウェア
+
+**機能**:
+- ✅ 未認証ユーザーを `/login` にリダイレクト
+- ✅ 認証済みユーザーは認証ページにアクセス不可
+- ✅ Cookie経由のセッション管理
+- ✅ 静的ファイルは除外
+
+**保護対象**:
+- `/` (ホームページ) - 認証必須
+- その他の全ページ - 認証必須 (login, signup以外)
+
+**除外対象**:
+- `/login` - 誰でもアクセス可
+- `/signup` - 誰でもアクセス可
+- 静的ファイル (画像, CSS等)
+
+### 5. Supabase認証設定
+
+**ドキュメント作成**:
+- `docs/supabase-auth-setup.md` - Supabase認証設定ガイド
+
+**必要な設定** (Supabase Dashboard):
+1. **Email Providerの有効化**
+   - Authentication > Providers > Email
+   - 「Enable Email provider」をON
+
+2. **開発環境向け設定**
+   - 「Confirm email」をOFF (メール確認スキップ)
+   - Site URL: `http://localhost:3000`
+   - Redirect URLs: `http://localhost:3000/**`
+
+3. **本番環境向け設定**
+   - 「Confirm email」をON
+   - Site URL: 本番ドメイン
+   - Rate Limitingの設定
+
+### 6. 動作確認
+
+**ビルドテスト**:
+```bash
+npm run build
+```
+✅ ビルド成功
+
+**開発サーバー起動**:
+```bash
+npm run dev
+```
+
+**動作確認手順**:
+1. `http://localhost:3000` にアクセス → `/login` にリダイレクト
+2. `/signup` で新規ユーザー登録
+3. 登録後、自動的にログインして `/` にリダイレクト
+4. ユーザー情報が表示される
+5. ログアウトボタンで `/login` にリダイレクト
+
+### トラブルシューティング
+
+**問題**: Zod v4でバリデーションエラー
+- **原因**: `error.errors` → `error.issues` に変更
+- **解決**: `validationResult.error.issues[0]` を使用
+
+**問題**: middleware警告 ("middleware" convention is deprecated)
+- **状況**: Next.js 16.1.1の警告 (動作には影響なし)
+- **対応**: 将来的に "proxy" に移行予定
+
+---
+
+## 🔄 次のステップ: Step 4 - OGP取得 & レシピ登録ロジック
 
 **実施予定内容**:
-1. Email/Passwordによるサインアップ・ログイン実装
-2. 認証フォームコンポーネント作成
-3. middleware.tsで未認証ユーザーのリダイレクト
-4. テスト用ユーザー作成と動作確認
+1. open-graph-scraperを使用したOGP取得
+2. レシピ登録用Server Actions
+3. レシピ登録フォームコンポーネント
+4. レシピ一覧表示機能
