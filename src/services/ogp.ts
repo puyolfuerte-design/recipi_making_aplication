@@ -11,48 +11,97 @@ export type OGPData = {
   url: string
 }
 
-// バリデーションスキーマ
-const urlSchema = z.object({
-  url: z.string().url({ message: '有効なURLを入力してください' }),
-})
+// バリデーションスキーマ (Zod v4: z.url() を使用)
+const urlSchema = z.url({ error: '有効なURLを入力してください' })
 
 /**
- * YouTubeモバイル版URLをPC版に変換
+ * YouTubeのURLかどうかを判定し、動画IDを返す
  */
-function normalizeYouTubeUrl(url: string): string {
+function extractYouTubeVideoId(url: string): string | null {
   try {
     const urlObj = new URL(url)
-    if (urlObj.hostname === 'm.youtube.com') {
-      urlObj.hostname = 'www.youtube.com'
-      return urlObj.toString()
+    const hostname = urlObj.hostname.replace('m.', '')
+
+    if (hostname === 'www.youtube.com' || hostname === 'youtube.com') {
+      return urlObj.searchParams.get('v')
     }
-    return url
+    if (hostname === 'youtu.be') {
+      return urlObj.pathname.slice(1) || null
+    }
+    return null
   } catch {
-    return url
+    return null
+  }
+}
+
+// YouTube oEmbed APIのレスポンス型
+type YouTubeOEmbedResponse = {
+  title: string
+  thumbnail_url: string
+  author_name: string
+}
+
+/**
+ * YouTube oEmbed APIでタイトル・サムネイルを取得
+ */
+async function fetchYouTubeOEmbed(url: string): Promise<OGPData | null> {
+  const apiUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`
+
+  const res = await fetch(apiUrl)
+  if (!res.ok) return null
+
+  const data = (await res.json()) as YouTubeOEmbedResponse
+  if (!data.title) return null
+
+  return {
+    title: data.title,
+    description: data.author_name ? `by ${data.author_name}` : undefined,
+    image: data.thumbnail_url,
+    url,
   }
 }
 
 /**
  * URLからOGP情報を取得
+ * YouTube URLの場合は oEmbed API を優先使用
  */
 export async function fetchOGP(url: string): Promise<OGPData | null> {
   // URLバリデーション
-  const validationResult = urlSchema.safeParse({ url })
+  const validationResult = urlSchema.safeParse(url)
   if (!validationResult.success) {
     return null
   }
 
-  try {
-    // YouTubeモバイルURLをPC版に正規化してからスクレイピング
-    const normalizedUrl = normalizeYouTubeUrl(validationResult.data.url)
-    const { result } = await ogs({ url: normalizedUrl })
+  const validatedUrl = validationResult.data
 
-    // OGPデータを抽出
+  // YouTube URLは oEmbed API で取得（ボット検出回避）
+  const videoId = extractYouTubeVideoId(validatedUrl)
+  if (videoId) {
+    try {
+      const ogpData = await fetchYouTubeOEmbed(validatedUrl)
+      if (ogpData) return ogpData
+    } catch (error) {
+      console.error('YouTube oEmbed取得エラー:', error)
+    }
+  }
+
+  // YouTube以外 (またはoEmbed失敗時) は open-graph-scraper でフォールバック
+  try {
+    const { result } = await ogs({
+      url: validatedUrl,
+      fetchOptions: {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+      },
+    })
+
     const ogpData: OGPData = {
       title: result.ogTitle || result.dcTitle || 'タイトルなし',
       description: result.ogDescription || result.dcDescription,
       image: result.ogImage?.[0]?.url || result.twitterImage?.[0]?.url,
-      url: validationResult.data.url,
+      url: validatedUrl,
     }
 
     return ogpData
