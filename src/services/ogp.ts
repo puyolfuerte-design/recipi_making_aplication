@@ -17,6 +17,22 @@ const urlSchema = z.object({
 })
 
 /**
+ * YouTubeモバイル版URLをPC版に変換
+ */
+function normalizeYouTubeUrl(url: string): string {
+  try {
+    const urlObj = new URL(url)
+    if (urlObj.hostname === 'm.youtube.com') {
+      urlObj.hostname = 'www.youtube.com'
+      return urlObj.toString()
+    }
+    return url
+  } catch {
+    return url
+  }
+}
+
+/**
  * URLからOGP情報を取得
  */
 export async function fetchOGP(url: string): Promise<OGPData | null> {
@@ -27,7 +43,9 @@ export async function fetchOGP(url: string): Promise<OGPData | null> {
   }
 
   try {
-    const { result } = await ogs({ url })
+    // YouTubeモバイルURLをPC版に正規化してからスクレイピング
+    const normalizedUrl = normalizeYouTubeUrl(validationResult.data.url)
+    const { result } = await ogs({ url: normalizedUrl })
 
     // OGPデータを抽出
     const ogpData: OGPData = {

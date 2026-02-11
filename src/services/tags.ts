@@ -224,6 +224,7 @@ export async function addTagToRecipe(
 
 /**
  * レシピからタグを削除
+ * どのレシピにも紐づかなくなったタグはマスタから自動削除する
  */
 export async function removeTagFromRecipe(
   recipeId: string,
@@ -239,6 +240,7 @@ export async function removeTagFromRecipe(
 
   const supabase = await createClient()
 
+  // 1. レシピからタグの紐付けを削除
   const { error } = await supabase
     .from('recipe_tags')
     .delete()
@@ -251,6 +253,21 @@ export async function removeTagFromRecipe(
       success: false,
       error: 'タグの削除に失敗しました',
     }
+  }
+
+  // 2. このタグが他のレシピで使われているか確認
+  const { count } = await supabase
+    .from('recipe_tags')
+    .select('*', { count: 'exact', head: true })
+    .eq('tag_id', tagId)
+
+  // 3. どこにも使われていなければタグマスタから削除
+  if (count === 0) {
+    await supabase
+      .from('tags')
+      .delete()
+      .eq('id', tagId)
+      .eq('user_id', user.id)
   }
 
   revalidatePath('/')

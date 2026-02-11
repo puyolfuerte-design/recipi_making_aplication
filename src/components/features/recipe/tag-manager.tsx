@@ -1,9 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   createTag,
   addTagToRecipe,
@@ -28,41 +39,49 @@ export function TagManager({
   selectedTagIds,
   onUpdate,
 }: TagManagerProps) {
-  const [isAdding, setIsAdding] = useState(false)
-  const [newTagName, setNewTagName] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [inputValue, setInputValue] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
   const [loadingTagId, setLoadingTagId] = useState<string | null>(null)
 
-  // 新しいタグを作成
-  const handleCreateTag = async () => {
-    if (!newTagName.trim()) return
+  const selectedTags = availableTags.filter((tag) =>
+    selectedTagIds.includes(tag.id)
+  )
+  const unselectedTags = availableTags.filter(
+    (tag) => !selectedTagIds.includes(tag.id)
+  )
 
-    setIsCreating(true)
-    const result = await createTag(newTagName.trim())
-    setIsCreating(false)
-
-    if (result.success && result.tag) {
-      toast.success(`タグ「${result.tag.name}」を作成しました`)
-      setNewTagName('')
-      setIsAdding(false)
-      // 作成したタグを即座にレシピに追加
-      await addTagToRecipe(recipeId, result.tag.id)
-      onUpdate?.()
-    } else {
-      toast.error(result.error || 'タグの作成に失敗しました')
-    }
-  }
-
-  // レシピにタグを追加
+  // 既存タグをレシピに追加
   const handleAddTag = async (tagId: string) => {
     setLoadingTagId(tagId)
     const result = await addTagToRecipe(recipeId, tagId)
     setLoadingTagId(null)
 
     if (result.success) {
+      setOpen(false)
+      setInputValue('')
       onUpdate?.()
     } else {
       toast.error(result.error || 'タグの追加に失敗しました')
+    }
+  }
+
+  // 新しいタグを作成してレシピに追加
+  const handleCreateTag = async (name: string) => {
+    if (!name.trim()) return
+
+    setIsLoading(true)
+    const result = await createTag(name.trim())
+    setIsLoading(false)
+
+    if (result.success && result.tag) {
+      toast.success(`タグ「${result.tag.name}」を作成しました`)
+      await addTagToRecipe(recipeId, result.tag.id)
+      setOpen(false)
+      setInputValue('')
+      onUpdate?.()
+    } else {
+      toast.error(result.error || 'タグの作成に失敗しました')
     }
   }
 
@@ -79,11 +98,14 @@ export function TagManager({
     }
   }
 
-  const selectedTags = availableTags.filter((tag) =>
-    selectedTagIds.includes(tag.id)
+  // 入力値と一致する未選択タグ（大文字小文字を無視）
+  const filteredTags = unselectedTags.filter((tag) =>
+    tag.name.toLowerCase().includes(inputValue.toLowerCase())
   )
-  const unselectedTags = availableTags.filter(
-    (tag) => !selectedTagIds.includes(tag.id)
+
+  // 入力値と完全一致するタグが存在するかチェック
+  const exactMatch = availableTags.some(
+    (tag) => tag.name.toLowerCase() === inputValue.toLowerCase().trim()
   )
 
   return (
@@ -112,81 +134,78 @@ export function TagManager({
           </Badge>
         ))}
 
-        {/* 未選択のタグを追加 */}
-        {unselectedTags.map((tag) => (
-          <Badge
-            key={tag.id}
-            variant="outline"
-            className="cursor-pointer hover:bg-gray-100"
-            onClick={() => handleAddTag(tag.id)}
-          >
-            {loadingTagId === tag.id ? (
-              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-            ) : (
+        {/* タグ追加 Combobox */}
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Badge
+              variant="outline"
+              className="cursor-pointer border-dashed hover:bg-gray-100"
+            >
               <Plus className="mr-1 h-3 w-3" />
-            )}
-            {tag.name}
-          </Badge>
-        ))}
+              タグを追加
+            </Badge>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-0" align="start">
+            <Command shouldFilter={false}>
+              <CommandInput
+                placeholder="タグを検索または作成..."
+                value={inputValue}
+                onValueChange={setInputValue}
+              />
+              <CommandList>
+                {/* 既存タグの候補 */}
+                {filteredTags.length > 0 && (
+                  <CommandGroup heading="既存タグ">
+                    {filteredTags.map((tag) => (
+                      <CommandItem
+                        key={tag.id}
+                        value={tag.id}
+                        onSelect={() => handleAddTag(tag.id)}
+                        disabled={loadingTagId === tag.id}
+                      >
+                        {loadingTagId === tag.id ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Tag className="mr-2 h-4 w-4" />
+                        )}
+                        {tag.name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
 
-        {/* 新規タグ追加ボタン */}
-        {!isAdding && (
-          <Badge
-            variant="outline"
-            className="cursor-pointer border-dashed hover:bg-gray-100"
-            onClick={() => setIsAdding(true)}
-          >
-            <Plus className="mr-1 h-3 w-3" />
-            新規タグ
-          </Badge>
-        )}
+                {/* 新規作成アクション */}
+                {inputValue.trim() && !exactMatch && (
+                  <CommandGroup heading="新規作成">
+                    <CommandItem
+                      value={`__create__${inputValue}`}
+                      onSelect={() => handleCreateTag(inputValue)}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Plus className="mr-2 h-4 w-4" />
+                      )}
+                      &ldquo;{inputValue.trim()}&rdquo; を作成する
+                    </CommandItem>
+                  </CommandGroup>
+                )}
+
+                {/* 完全一致かつ未選択の場合は追加ボタンを表示 */}
+                {inputValue.trim() && exactMatch && filteredTags.length === 0 && (
+                  <CommandEmpty>タグはすでに追加済みです</CommandEmpty>
+                )}
+
+                {/* 入力なし・候補なし */}
+                {!inputValue.trim() && unselectedTags.length === 0 && (
+                  <CommandEmpty>追加できるタグがありません</CommandEmpty>
+                )}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
-
-      {/* 新規タグ入力フォーム */}
-      {isAdding && (
-        <div className="flex gap-2">
-          <Input
-            type="text"
-            value={newTagName}
-            onChange={(e) => setNewTagName(e.target.value)}
-            placeholder="タグ名を入力..."
-            className="h-8 text-sm"
-            disabled={isCreating}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                handleCreateTag()
-              }
-              if (e.key === 'Escape') {
-                setIsAdding(false)
-                setNewTagName('')
-              }
-            }}
-          />
-          <Button
-            size="sm"
-            onClick={handleCreateTag}
-            disabled={!newTagName.trim() || isCreating}
-          >
-            {isCreating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              '追加'
-            )}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setIsAdding(false)
-              setNewTagName('')
-            }}
-            disabled={isCreating}
-          >
-            取消
-          </Button>
-        </div>
-      )}
     </div>
   )
 }

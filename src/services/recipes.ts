@@ -198,6 +198,7 @@ export async function getRecipes() {
 
 /**
  * レシピを削除
+ * 削除後に孤児タグ（どのレシピにも紐づかなくなったタグ）を自動削除する
  */
 export async function deleteRecipe(recipeId: string): Promise<RecipeResult> {
   const user = await getCurrentUser()
@@ -210,6 +211,15 @@ export async function deleteRecipe(recipeId: string): Promise<RecipeResult> {
 
   const supabase = await createClient()
 
+  // 1. 削除前に紐づくタグIDを取得
+  const { data: recipeTags } = await supabase
+    .from('recipe_tags')
+    .select('tag_id')
+    .eq('recipe_id', recipeId)
+
+  const tagIds = recipeTags?.map((rt) => rt.tag_id) ?? []
+
+  // 2. レシピを削除（recipe_tagsはRLSのCASCADEで連動削除）
   const { error } = await supabase
     .from('recipes')
     .delete()
@@ -221,6 +231,22 @@ export async function deleteRecipe(recipeId: string): Promise<RecipeResult> {
     return {
       success: false,
       error: 'レシピの削除に失敗しました',
+    }
+  }
+
+  // 3. 各タグの利用カウントを確認し、0ならマスタから削除
+  for (const tagId of tagIds) {
+    const { count } = await supabase
+      .from('recipe_tags')
+      .select('*', { count: 'exact', head: true })
+      .eq('tag_id', tagId)
+
+    if (count === 0) {
+      await supabase
+        .from('tags')
+        .delete()
+        .eq('id', tagId)
+        .eq('user_id', user.id)
     }
   }
 

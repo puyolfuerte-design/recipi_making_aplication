@@ -726,3 +726,82 @@ npm run update-types
    - スケルトンローディング
    - トースト通知
    - レスポンシブデザイン
+
+---
+
+## ✅ タグ機能改善 (完了)
+
+**実施日**: 2026-02-11
+
+### 1. Combobox による検索＆作成の統合（shadcn/ui Command）
+
+**変更ファイル**:
+- `src/components/features/recipe/tag-manager.tsx` - UI全面刷新
+- `src/components/ui/popover.tsx` - 新規追加 (shadcn/ui)
+- `src/components/ui/command.tsx` - 新規追加 (shadcn/ui)
+- `src/components/ui/dialog.tsx` - 新規追加 (shadcn/ui, command依存)
+
+**変更内容**:
+- 未選択タグをすべて並べる旧UIを廃止
+- 「タグを追加」バッジをクリックすると `Popover` + `Command` による検索窓が開く
+- `CommandInput` で既存タグをリアルタイムフィルタリング
+- 入力文字に一致するタグがなければ「"〇〇" を作成する」アクションを表示し、クリックで新規作成＆追加を一括実行
+- 「探す」と「作る」をシームレスに統合したUI
+
+**インストールコマンド**:
+```bash
+npx shadcn@latest add popover command
+```
+
+### 2. 孤児タグ（未利用タグ）の自動クリーンアップ
+
+**変更ファイル**:
+- `src/services/tags.ts` - `removeTagFromRecipe` を改修
+- `src/services/recipes.ts` - `deleteRecipe` を改修
+
+**変更内容**:
+
+#### `removeTagFromRecipe` の改修
+1. レシピからタグの紐付けを削除
+2. そのタグが他のレシピで使われているかカウントを確認
+3. カウントが 0 なら `tags` マスタからも自動削除
+
+#### `deleteRecipe` の改修
+1. レシピ削除前に紐づくタグIDを取得
+2. レシピを削除（`recipe_tags` は CASCADE で連動削除）
+3. 各タグの利用カウントを確認し、0 なら `tags` マスタから自動削除
+
+### 3. タグ編集UIの Popover 化
+
+**変更ファイル**:
+- `src/components/features/recipe/recipe-card.tsx` - タグ編集部分を改修
+
+**変更内容**:
+- `showTagManager` state とインライン展開（`ChevronDown/Up` トグル）を廃止
+- `Popover + PopoverTrigger + PopoverContent` を使用し、カードのレイアウトを崩さずにカードの上にフワッと表示
+- `PopoverContent` 内に Combobox 対応の新 `TagManager` を配置
+
+### ビルドテスト
+
+```bash
+npm run build
+```
+✅ ビルド成功（各依頼完了ごとに確認済み）
+
+### ファイル構成（タグ機能改善完了時点）
+
+```
+src/
+├── components/
+│   ├── ui/
+│   │   ├── command.tsx     # 新規追加
+│   │   ├── dialog.tsx      # 新規追加
+│   │   └── popover.tsx     # 新規追加
+│   └── features/
+│       └── recipe/
+│           ├── recipe-card.tsx   # Popover化
+│           └── tag-manager.tsx   # Combobox UI に刷新
+└── services/
+    ├── recipes.ts    # deleteRecipe に孤児タグ削除追加
+    └── tags.ts       # removeTagFromRecipe に孤児タグ削除追加
+```

@@ -11,6 +11,11 @@ import {
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { deleteRecipe } from '@/services/recipes'
 import { TagManager } from './tag-manager'
 import {
@@ -21,8 +26,6 @@ import {
   FileText,
   Link2,
   Tag,
-  ChevronDown,
-  ChevronUp,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Database } from '@/types/supabase'
@@ -45,7 +48,6 @@ export function RecipeCard({
 }: RecipeCardProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [showTagManager, setShowTagManager] = useState(false)
 
   const handleDelete = async () => {
     setIsDeleting(true)
@@ -136,28 +138,23 @@ export function RecipeCard({
             </div>
           )}
 
-          {/* タグ管理トグル */}
-          <button
-            onClick={() => setShowTagManager(!showTagManager)}
-            className="flex items-center text-xs text-gray-500 hover:text-gray-700"
-          >
-            {showTagManager ? (
-              <ChevronUp className="mr-1 h-3 w-3" />
-            ) : (
-              <ChevronDown className="mr-1 h-3 w-3" />
-            )}
-            タグを編集
-          </button>
-
-          {/* タグ管理UI */}
-          {showTagManager && (
-            <TagManager
-              recipeId={recipe.id}
-              availableTags={availableTags}
-              selectedTagIds={selectedTagIds}
-              onUpdate={onUpdate}
-            />
-          )}
+          {/* タグ管理 Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="flex items-center text-xs text-gray-500 hover:text-gray-700">
+                <Tag className="mr-1 h-3 w-3" />
+                タグを編集
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-2" align="start">
+              <TagManager
+                recipeId={recipe.id}
+                availableTags={availableTags}
+                selectedTagIds={selectedTagIds}
+                onUpdate={onUpdate}
+              />
+            </PopoverContent>
+          </Popover>
         </div>
       </CardContent>
 
