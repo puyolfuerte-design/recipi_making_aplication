@@ -16,7 +16,11 @@ import { updateRecipe } from '@/services/recipes'
 import type { RecipeResult } from '@/services/recipes'
 import type { Database } from '@/types/supabase'
 
-type Recipe = Database['public']['Tables']['recipes']['Row']
+// マイグレーション002適用後は自動的に冗長になるが無害な型拡張
+type Recipe = Database['public']['Tables']['recipes']['Row'] & {
+  ingredients?: string | null
+  instructions?: string | null
+}
 
 type RecipeEditDialogProps = {
   recipe: Recipe
@@ -84,6 +88,38 @@ export function RecipeEditDialog({ recipe, onUpdate }: RecipeEditDialogProps) {
               disabled={pending}
               rows={3}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+
+          {/* 材料 */}
+          <div className="space-y-1">
+            <label htmlFor="edit-ingredients" className="text-sm font-medium">
+              材料
+            </label>
+            <textarea
+              id="edit-ingredients"
+              name="ingredients"
+              defaultValue={recipe.ingredients ?? ''}
+              disabled={pending}
+              rows={4}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="材料を1行ずつ入力..."
+            />
+          </div>
+
+          {/* 手順 */}
+          <div className="space-y-1">
+            <label htmlFor="edit-instructions" className="text-sm font-medium">
+              手順
+            </label>
+            <textarea
+              id="edit-instructions"
+              name="instructions"
+              defaultValue={recipe.instructions ?? ''}
+              disabled={pending}
+              rows={5}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="手順を1行ずつ入力..."
             />
           </div>
 

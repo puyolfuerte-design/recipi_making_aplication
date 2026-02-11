@@ -27,11 +27,17 @@ import {
   FileText,
   Link2,
   Tag,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Database } from '@/types/supabase'
 
-type Recipe = Database['public']['Tables']['recipes']['Row']
+// マイグレーション002適用後は自動的に冗長になるが無害な型拡張
+type Recipe = Database['public']['Tables']['recipes']['Row'] & {
+  ingredients?: string | null
+  instructions?: string | null
+}
 type TagType = Database['public']['Tables']['tags']['Row']
 
 type RecipeCardProps = {
@@ -49,6 +55,7 @@ export function RecipeCard({
 }: RecipeCardProps) {
   const [isDeleting, setIsDeleting] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showDetails, setShowDetails] = useState(false)
 
   const handleDelete = async () => {
     setIsDeleting(true)
@@ -166,6 +173,44 @@ export function RecipeCard({
               メモ: {recipe.memo}
             </p>
           </div>
+        </CardContent>
+      )}
+
+      {/* 材料・手順トグル */}
+      {(recipe.ingredients || recipe.instructions) && (
+        <CardContent className="pb-2 pt-0">
+          <button
+            type="button"
+            onClick={() => setShowDetails((v) => !v)}
+            className="flex w-full items-center justify-between rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600 hover:bg-gray-100"
+          >
+            <span>材料・手順を{showDetails ? '閉じる' : '見る'}</span>
+            {showDetails ? (
+              <ChevronUp className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+          </button>
+          {showDetails && (
+            <div className="mt-2 space-y-3">
+              {recipe.ingredients && (
+                <div>
+                  <p className="mb-1 text-xs font-medium text-gray-700">材料</p>
+                  <p className="whitespace-pre-line text-xs text-gray-600">
+                    {recipe.ingredients}
+                  </p>
+                </div>
+              )}
+              {recipe.instructions && (
+                <div>
+                  <p className="mb-1 text-xs font-medium text-gray-700">手順</p>
+                  <p className="whitespace-pre-line text-xs text-gray-600">
+                    {recipe.instructions}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       )}
 

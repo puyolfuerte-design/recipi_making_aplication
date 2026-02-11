@@ -181,8 +181,36 @@ export function RecipeForm({ onSuccess }: RecipeFormProps) {
 
             {/* URL登録フォーム */}
             {preview && (
-              <form action={urlFormAction} className="space-y-4">
+              <form key={preview.url} action={urlFormAction} className="space-y-4">
                 <input type="hidden" name="url" value={urlInput} />
+
+                <div className="space-y-2">
+                  <label htmlFor="url-ingredients" className="text-sm font-medium">
+                    材料 (任意)
+                  </label>
+                  <textarea
+                    id="url-ingredients"
+                    name="ingredients"
+                    defaultValue={preview.ingredients ?? ''}
+                    className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="材料を1行ずつ入力..."
+                    disabled={urlPending}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="url-instructions" className="text-sm font-medium">
+                    手順 (任意)
+                  </label>
+                  <textarea
+                    id="url-instructions"
+                    name="instructions"
+                    defaultValue={preview.instructions ?? ''}
+                    className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="手順を1行ずつ入力..."
+                    disabled={urlPending}
+                  />
+                </div>
 
                 <div className="space-y-2">
                   <label htmlFor="url-memo" className="text-sm font-medium">
@@ -241,6 +269,32 @@ export function RecipeForm({ onSuccess }: RecipeFormProps) {
                 name="description"
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 placeholder="レシピの説明を入力..."
+                disabled={manualPending}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="manual-ingredients" className="text-sm font-medium">
+                材料 (任意)
+              </label>
+              <textarea
+                id="manual-ingredients"
+                name="ingredients"
+                className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="材料を1行ずつ入力..."
+                disabled={manualPending}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="manual-instructions" className="text-sm font-medium">
+                手順 (任意)
+              </label>
+              <textarea
+                id="manual-instructions"
+                name="instructions"
+                className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="手順を1行ずつ入力..."
                 disabled={manualPending}
               />
             </div>

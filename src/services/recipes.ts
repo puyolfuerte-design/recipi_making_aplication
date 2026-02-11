@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase-server'
 import { getCurrentUser } from './auth'
 import { fetchOGP } from './ogp'
+import type { Database } from '@/types/supabase'
 
 export type RecipeResult = {
   success: boolean
@@ -12,6 +13,16 @@ export type RecipeResult = {
     id: string
     title: string
   }
+}
+
+// マイグレーション002が適用されるまでの型拡張（適用後は自動的に上書きされ冗長になるが無害）
+type RecipeInsert = Database['public']['Tables']['recipes']['Insert'] & {
+  ingredients?: string | null
+  instructions?: string | null
+}
+type RecipeUpdate = Database['public']['Tables']['recipes']['Update'] & {
+  ingredients?: string | null
+  instructions?: string | null
 }
 
 /**
@@ -67,6 +78,16 @@ export async function createRecipeFromURL(
     }
   }
 
+  // FormDataの値を優先、なければOGP取得値を使用
+  const ingredients =
+    (formData.get('ingredients') as string)?.trim() ||
+    ogpData.ingredients ||
+    null
+  const instructions =
+    (formData.get('instructions') as string)?.trim() ||
+    ogpData.instructions ||
+    null
+
   const supabase = await createClient()
 
   // レシピ登録
@@ -80,7 +101,9 @@ export async function createRecipeFromURL(
       description: ogpData.description,
       memo: memo || null,
       is_manual: false,
-    })
+      ingredients,
+      instructions,
+    } as RecipeInsert)
     .select()
     .single()
 
@@ -120,6 +143,8 @@ export async function createRecipeManually(
     title: formData.get('title') as string,
     description: formData.get('description') as string,
     memo: formData.get('memo') as string,
+    ingredients: (formData.get('ingredients') as string)?.trim() || null,
+    instructions: (formData.get('instructions') as string)?.trim() || null,
   }
 
   // バリデーション
@@ -143,7 +168,9 @@ export async function createRecipeManually(
       description: rawData.description || null,
       memo: rawData.memo || null,
       is_manual: true,
-    })
+      ingredients: rawData.ingredients,
+      instructions: rawData.instructions,
+    } as RecipeInsert)
     .select()
     .single()
 
@@ -211,6 +238,10 @@ export async function updateRecipe(
   const title = (formData.get('title') as string)?.trim()
   const description = (formData.get('description') as string)?.trim() || null
   const memo = (formData.get('memo') as string)?.trim() || null
+  const ingredients =
+    (formData.get('ingredients') as string)?.trim() || null
+  const instructions =
+    (formData.get('instructions') as string)?.trim() || null
 
   if (!title) {
     return { success: false, error: 'タイトルを入力してください' }
@@ -220,7 +251,7 @@ export async function updateRecipe(
 
   const { data: recipe, error } = await supabase
     .from('recipes')
-    .update({ title, description, memo })
+    .update({ title, description, memo, ingredients, instructions } as RecipeUpdate)
     .eq('id', recipeId)
     .eq('user_id', user.id)
     .select()

@@ -77,6 +77,8 @@ export type Database = {
           description: string | null
           id: string
           image_url: string | null
+          ingredients: string | null
+          instructions: string | null
           is_manual: boolean
           memo: string | null
           title: string
@@ -89,6 +91,8 @@ export type Database = {
           description?: string | null
           id?: string
           image_url?: string | null
+          ingredients?: string | null
+          instructions?: string | null
           is_manual?: boolean
           memo?: string | null
           title: string
@@ -101,6 +105,8 @@ export type Database = {
           description?: string | null
           id?: string
           image_url?: string | null
+          ingredients?: string | null
+          instructions?: string | null
           is_manual?: boolean
           memo?: string | null
           title?: string
