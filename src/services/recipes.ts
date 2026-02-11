@@ -197,6 +197,45 @@ export async function getRecipes() {
 }
 
 /**
+ * レシピを更新
+ */
+export async function updateRecipe(
+  recipeId: string,
+  formData: FormData
+): Promise<RecipeResult> {
+  const user = await getCurrentUser()
+  if (!user) {
+    return { success: false, error: 'ログインが必要です' }
+  }
+
+  const title = (formData.get('title') as string)?.trim()
+  const description = (formData.get('description') as string)?.trim() || null
+  const memo = (formData.get('memo') as string)?.trim() || null
+
+  if (!title) {
+    return { success: false, error: 'タイトルを入力してください' }
+  }
+
+  const supabase = await createClient()
+
+  const { data: recipe, error } = await supabase
+    .from('recipes')
+    .update({ title, description, memo })
+    .eq('id', recipeId)
+    .eq('user_id', user.id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('レシピ更新エラー:', error)
+    return { success: false, error: 'レシピの更新に失敗しました' }
+  }
+
+  revalidatePath('/')
+  return { success: true, recipe: { id: recipe.id, title: recipe.title } }
+}
+
+/**
  * レシピを削除
  * 削除後に孤児タグ（どのレシピにも紐づかなくなったタグ）を自動削除する
  */

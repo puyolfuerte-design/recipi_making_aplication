@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/popover'
 import { deleteRecipe } from '@/services/recipes'
 import { TagManager } from './tag-manager'
+import { RecipeEditDialog } from './recipe-edit-dialog'
 import {
   ExternalLink,
   ImageOff,
@@ -190,6 +191,7 @@ export function RecipeCard({
               </a>
             </Button>
           )}
+          <RecipeEditDialog recipe={recipe} onUpdate={onUpdate} />
           {!showConfirm ? (
             <Button
               variant="outline"
