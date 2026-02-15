@@ -122,7 +122,7 @@ export function RecipeCard({
         </div>
       </div>
 
-      <CardHeader className="flex-1 pb-2">
+      <CardHeader className="pb-2">
         <CardTitle className="line-clamp-2 text-base">{recipe.title}</CardTitle>
         {recipe.description && (
           <CardDescription className="line-clamp-2 text-sm">
@@ -213,6 +213,9 @@ export function RecipeCard({
           )}
         </CardContent>
       )}
+
+      {/* スペーサー: フッターを常に最下部に固定 */}
+      <div className="flex-1" />
 
       <CardFooter className="flex flex-col items-stretch gap-2 pt-2">
         <div className="flex items-center justify-between text-xs text-gray-500">
