@@ -3,6 +3,7 @@
 import ogs from 'open-graph-scraper'
 import * as cheerio from 'cheerio'
 import { z } from 'zod'
+import OpenAI from 'openai'
 import { env } from '@/lib/env'
 
 // ============================================================
@@ -336,19 +337,18 @@ async function fetchYouTubeData(
     return fetchYouTubeOEmbed(url)
   }
 
-  // ★ LLM置き換えポイント:
-  //   const parsed = await extractRecipeWithLLM(snippet.description)
-  const parsed = await parseYouTubeDescription(snippet.description)
+  // YouTube には Recipe JSON-LD が存在しないため、常に LLM で判定する
+  const llmResult = snippet.description
+    ? await extractRecipeWithLLM(snippet.description.slice(0, 8000))
+    : null
 
   return {
     title: snippet.title,
-    description:
-      parsed.remainingText ??
-      (snippet.description ? snippet.description.slice(0, 200) : undefined),
+    description: snippet.description ? snippet.description.slice(0, 200) : undefined,
     image: snippet.thumbnailUrl || undefined,
     url,
-    ingredients: parsed.ingredients,
-    instructions: parsed.instructions,
+    ingredients: llmResult?.ingredients || undefined,
+    instructions: llmResult?.instructions || undefined,
   }
 }
 
@@ -404,52 +404,116 @@ function findSchemaRecipe(html: string): SchemaRecipe | null {
   return null
 }
 
-async function fetchRecipeJsonLD(
-  url: string
-): Promise<{ ingredients?: string; instructions?: string }> {
+// ============================================================
+// LLM解析 (非YouTube サイト用フォールバック)
+// ============================================================
+
+/**
+ * LLMのトークン節約のため、HTMLから不要要素を除去してテキストに変換する。
+ * script/style/noscript/iframe/svg/header/footer/nav を削除し、
+ * ブロック要素の区切りに改行を挿入して圧縮する。
+ */
+function cleanHtmlForLLM(html: string): string {
+  const $ = cheerio.load(html)
+  $('script, style, noscript, iframe, svg, header, footer, nav').remove()
+  $('br').replaceWith('\n')
+  $(
+    'div, p, li, ul, ol, h1, h2, h3, h4, h5, h6, section, article, blockquote'
+  ).each((_, el) => {
+    $(el).append('\n')
+  })
+  return $.root()
+    .text()
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .filter((line) => line.length > 0)
+    .join('\n')
+    .slice(0, 8000) // トークン節約のため上限を設ける
+}
+
+/**
+ * OpenAI gpt-4o-mini でテキストから材料・手順を抽出する。
+ * APIキー未設定・APIエラー時は null を返して処理を継続させる。
+ */
+async function extractRecipeWithLLM(
+  text: string
+): Promise<{ ingredients: string; instructions: string } | null> {
+  const apiKey = env.OPENAI_API_KEY
+  if (!apiKey) return null
+
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
+    const openai = new OpenAI({ apiKey })
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content:
+            'あなたはレシピ解析の専門家です。入力されたWebページのテキストから料理の「材料」と「作り方（手順）」を抽出し、JSON形式で出力してください。出力形式: { "ingredients": "材料1\\n材料2\\n...", "instructions": "手順1\\n手順2\\n..." }',
+        },
+        {
+          role: 'user',
+          content: text,
+        },
+      ],
     })
-    if (!res.ok) return {}
 
-    const html = await res.text()
-    const recipe = findSchemaRecipe(html)
-    if (!recipe) return {}
+    const content = completion.choices[0]?.message?.content
+    if (!content) return null
 
-    const ingredients =
-      Array.isArray(recipe.recipeIngredient) &&
-      recipe.recipeIngredient.length > 0
-        ? recipe.recipeIngredient.join('\n')
-        : undefined
-
-    let instructions: string | undefined
-    if (recipe.recipeInstructions) {
-      const raw = recipe.recipeInstructions
-      if (typeof raw === 'string') {
-        instructions = raw
-      } else if (Array.isArray(raw)) {
-        const lines = raw
-          .map((step) => {
-            if (typeof step === 'string') return step
-            if (typeof step === 'object' && step !== null && 'text' in step) {
-              return step.text ?? ''
-            }
-            return ''
-          })
-          .filter((s) => s.length > 0)
-        instructions = lines.length > 0 ? lines.join('\n') : undefined
-      }
+    const parsed = JSON.parse(content) as {
+      ingredients?: string
+      instructions?: string
     }
+    const ingredients = parsed.ingredients?.trim() || ''
+    const instructions = parsed.instructions?.trim() || ''
+    if (!ingredients && !instructions) return null
 
     return { ingredients, instructions }
   } catch (error) {
-    console.error('JSON-LD取得エラー:', error)
-    return {}
+    console.error('LLM解析エラー:', error)
+    return null
   }
+}
+
+/**
+ * HTML文字列から JSON-LD の Recipe スキーマを解析して材料・手順を返す。
+ * ネットワーク処理は行わない（fetchOGP が HTML を渡す）。
+ */
+function parseRecipeJsonLD(html: string): {
+  hasJsonLd: boolean
+  ingredients?: string
+  instructions?: string
+} {
+  const recipe = findSchemaRecipe(html)
+  if (!recipe) return { hasJsonLd: false }
+
+  const ingredients =
+    Array.isArray(recipe.recipeIngredient) && recipe.recipeIngredient.length > 0
+      ? recipe.recipeIngredient.join('\n')
+      : undefined
+
+  let instructions: string | undefined
+  if (recipe.recipeInstructions) {
+    const raw = recipe.recipeInstructions
+    if (typeof raw === 'string') {
+      instructions = raw
+    } else if (Array.isArray(raw)) {
+      const lines = raw
+        .map((step) => {
+          if (typeof step === 'string') return step
+          if (typeof step === 'object' && step !== null && 'text' in step) {
+            return step.text ?? ''
+          }
+          return ''
+        })
+        .filter((s) => s.length > 0)
+      instructions = lines.length > 0 ? lines.join('\n') : undefined
+    }
+  }
+
+  return { hasJsonLd: true, ingredients, instructions }
 }
 
 // ============================================================
@@ -477,30 +541,41 @@ export async function fetchOGP(url: string): Promise<OGPData | null> {
     }
   }
 
-  // YouTube以外: OGP取得 と JSON-LD抽出 を並行実行
+  // YouTube以外: OGP取得 と HTML取得 を並行実行（HTML は JSON-LD / LLM で共用）
+  const USER_AGENT =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
   try {
-    const [ogsResult, jsonLdResult] = await Promise.all([
+    const [ogsResult, html] = await Promise.all([
       ogs({
         url: validatedUrl,
-        fetchOptions: {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          },
-        },
+        fetchOptions: { headers: { 'User-Agent': USER_AGENT } },
       }),
-      fetchRecipeJsonLD(validatedUrl),
+      fetch(validatedUrl, { headers: { 'User-Agent': USER_AGENT } })
+        .then((r) => (r.ok ? r.text() : ''))
+        .catch(() => ''),
     ])
 
     const { result } = ogsResult
+    const jsonLdResult = parseRecipeJsonLD(html)
+    let { ingredients, instructions } = jsonLdResult
+
+    // JSON-LD（Recipe スキーマ）が存在しない場合のみ LLM で判定
+    if (!jsonLdResult.hasJsonLd && html) {
+      const llmResult = await extractRecipeWithLLM(cleanHtmlForLLM(html))
+      if (llmResult) {
+        ingredients = llmResult.ingredients || undefined
+        instructions = llmResult.instructions || undefined
+      }
+    }
 
     return {
       title: result.ogTitle || result.dcTitle || 'タイトルなし',
       description: result.ogDescription || result.dcDescription,
       image: result.ogImage?.[0]?.url || result.twitterImage?.[0]?.url,
       url: validatedUrl,
-      ingredients: jsonLdResult.ingredients,
-      instructions: jsonLdResult.instructions,
+      ingredients,
+      instructions,
     }
   } catch (error) {
     console.error('OGP取得エラー:', error)
