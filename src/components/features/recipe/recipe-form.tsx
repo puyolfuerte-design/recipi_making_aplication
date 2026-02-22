@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useActionState } from 'react'
+import { useState, useActionState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -13,11 +13,13 @@ import {
 import {
   createRecipeFromURL,
   createRecipeManually,
+  createRecipeFromImage,
   previewRecipe,
   type RecipeResult,
 } from '@/services/recipes'
+import { extractRecipeFromImage, type ExtractedRecipeData } from '@/services/vision'
 import type { OGPData } from '@/services/ogp'
-import { Link2, FileText, Loader2, ExternalLink, ImageOff } from 'lucide-react'
+import { Link2, FileText, Loader2, ExternalLink, ImageOff, Camera } from 'lucide-react'
 import { toast } from 'sonner'
 
 type RecipeFormProps = {
@@ -25,10 +27,17 @@ type RecipeFormProps = {
 }
 
 export function RecipeForm({ onSuccess }: RecipeFormProps) {
-  const [mode, setMode] = useState<'url' | 'manual'>('url')
+  const [mode, setMode] = useState<'url' | 'manual' | 'image'>('url')
   const [preview, setPreview] = useState<OGPData | null>(null)
   const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const [urlInput, setUrlInput] = useState('')
+
+  // 画像モード用のステート
+  const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const [compressedImageDataUrl, setCompressedImageDataUrl] = useState<string | null>(null)
+  const [extractedData, setExtractedData] = useState<ExtractedRecipeData | null>(null)
+  const [isExtracting, setIsExtracting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // URL登録用のフォームステート
   const [urlState, urlFormAction, urlPending] = useActionState<
@@ -62,6 +71,28 @@ export function RecipeForm({ onSuccess }: RecipeFormProps) {
     return result
   }, { success: false })
 
+  // 画像から登録用のフォームステート
+  const [imageState, imageFormAction, imagePending] = useActionState<
+    RecipeResult,
+    FormData
+  >(async (_prevState, formData) => {
+    const result = await createRecipeFromImage(formData)
+    if (result.success) {
+      toast.success(`「${result.recipe?.title}」を登録しました`)
+      // フォームリセット
+      setSelectedImage(null)
+      setCompressedImageDataUrl(null)
+      setExtractedData(null)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      onSuccess?.()
+    } else {
+      toast.error(result.error)
+    }
+    return result
+  }, { success: false })
+
   // URLプレビュー取得
   const handlePreview = async () => {
     if (!urlInput) return
@@ -75,6 +106,89 @@ export function RecipeForm({ onSuccess }: RecipeFormProps) {
     } else {
       toast.error(result.error || 'レシピ情報を取得できませんでした')
       setPreview(null)
+    }
+  }
+
+  // 画像圧縮関数
+  const compressImage = async (file: File): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const img = new Image()
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d')
+          if (!ctx) {
+            resolve(null)
+            return
+          }
+
+          // 長辺を最大1200pxにリサイズ
+          const maxSize = 1200
+          let width = img.width
+          let height = img.height
+
+          if (width > height && width > maxSize) {
+            height = (height * maxSize) / width
+            width = maxSize
+          } else if (height > maxSize) {
+            width = (width * maxSize) / height
+            height = maxSize
+          }
+
+          canvas.width = width
+          canvas.height = height
+          ctx.drawImage(img, 0, 0, width, height)
+
+          // JPEG形式で品質0.8で圧縮
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+          resolve(dataUrl)
+        }
+        img.onerror = () => resolve(null)
+        img.src = e.target?.result as string
+      }
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(file)
+    })
+  }
+
+  // 画像選択ハンドラー
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('画像ファイルを選択してください')
+      return
+    }
+
+    // プレビュー用にファイルURLを作成
+    const imageUrl = URL.createObjectURL(file)
+    setSelectedImage(imageUrl)
+
+    // 画像を圧縮
+    const compressed = await compressImage(file)
+    if (compressed) {
+      setCompressedImageDataUrl(compressed)
+    } else {
+      toast.error('画像の処理に失敗しました')
+      setSelectedImage(null)
+    }
+  }
+
+  // レシピ抽出ハンドラー
+  const handleExtractRecipe = async () => {
+    if (!compressedImageDataUrl) return
+
+    setIsExtracting(true)
+    const result = await extractRecipeFromImage(compressedImageDataUrl)
+    setIsExtracting(false)
+
+    if (result.success && result.data) {
+      setExtractedData(result.data)
+      toast.success('レシピ情報を読み取りました')
+    } else {
+      toast.error(result.error || 'レシピ情報を読み取れませんでした')
     }
   }
 
@@ -100,6 +214,18 @@ export function RecipeForm({ onSuccess }: RecipeFormProps) {
           >
             <Link2 className="mr-2 h-4 w-4" />
             URLから追加
+          </Button>
+          <Button
+            type="button"
+            variant={mode === 'image' ? 'default' : 'outline'}
+            onClick={() => {
+              setMode('image')
+              setPreview(null)
+            }}
+            className="flex-1"
+          >
+            <Camera className="mr-2 h-4 w-4" />
+            画像から追加
           </Button>
           <Button
             type="button"
@@ -235,6 +361,174 @@ export function RecipeForm({ onSuccess }: RecipeFormProps) {
                     'レシピを登録'
                   )}
                 </Button>
+              </form>
+            )}
+          </div>
+        )}
+
+        {/* 画像読み取りモード */}
+        {mode === 'image' && (
+          <div className="space-y-4">
+            {/* ファイル選択 */}
+            <div className="space-y-2">
+              <label htmlFor="image-file" className="text-sm font-medium">
+                レシピ画像を選択
+              </label>
+              <Input
+                id="image-file"
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleImageSelect}
+                disabled={isExtracting || imagePending}
+              />
+            </div>
+
+            {/* 画像プレビュー */}
+            {selectedImage && !extractedData && (
+              <div className="space-y-4">
+                <div className="rounded-lg border bg-gray-50 p-4">
+                  <img
+                    src={selectedImage}
+                    alt="選択した画像"
+                    className="mx-auto max-h-[400px] rounded-md object-contain"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  onClick={handleExtractRecipe}
+                  disabled={isExtracting || !compressedImageDataUrl}
+                  className="w-full"
+                >
+                  {isExtracting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      読み取り中...
+                    </>
+                  ) : (
+                    'レシピ情報を読み取る'
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {/* 抽出結果の編集フォーム */}
+            {extractedData && (
+              <form action={imageFormAction} className="space-y-4">
+                <div className="rounded-lg border bg-blue-50 p-3 text-sm text-blue-800">
+                  読み取った情報を確認・編集してください
+                </div>
+
+                {selectedImage && (
+                  <div className="rounded-lg border bg-gray-50 p-2">
+                    <img
+                      src={selectedImage}
+                      alt="選択した画像"
+                      className="mx-auto max-h-[200px] rounded-md object-contain"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label htmlFor="image-title" className="text-sm font-medium">
+                    タイトル <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    id="image-title"
+                    name="title"
+                    type="text"
+                    defaultValue={extractedData.title}
+                    placeholder="レシピのタイトルを入力..."
+                    required
+                    disabled={imagePending}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="image-description" className="text-sm font-medium">
+                    説明 (任意)
+                  </label>
+                  <textarea
+                    id="image-description"
+                    name="description"
+                    defaultValue={extractedData.description}
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="レシピの説明を入力..."
+                    disabled={imagePending}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="image-ingredients" className="text-sm font-medium">
+                    材料 (任意)
+                  </label>
+                  <textarea
+                    id="image-ingredients"
+                    name="ingredients"
+                    defaultValue={extractedData.ingredients}
+                    className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="材料を1行ずつ入力..."
+                    disabled={imagePending}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="image-instructions" className="text-sm font-medium">
+                    手順 (任意)
+                  </label>
+                  <textarea
+                    id="image-instructions"
+                    name="instructions"
+                    defaultValue={extractedData.instructions}
+                    className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="手順を1行ずつ入力..."
+                    disabled={imagePending}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="image-memo" className="text-sm font-medium">
+                    メモ (任意)
+                  </label>
+                  <textarea
+                    id="image-memo"
+                    name="memo"
+                    defaultValue={extractedData.memo}
+                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="このレシピのメモを入力..."
+                    disabled={imagePending}
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setExtractedData(null)
+                      setSelectedImage(null)
+                      setCompressedImageDataUrl(null)
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = ''
+                      }
+                    }}
+                    disabled={imagePending}
+                    className="flex-1"
+                  >
+                    やり直す
+                  </Button>
+                  <Button type="submit" disabled={imagePending} className="flex-1">
+                    {imagePending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        登録中...
+                      </>
+                    ) : (
+                      'レシピを登録'
+                    )}
+                  </Button>
+                </div>
               </form>
             )}
           </div>

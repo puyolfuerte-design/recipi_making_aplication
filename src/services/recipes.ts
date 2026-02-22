@@ -193,6 +193,73 @@ export async function createRecipeManually(
 }
 
 /**
+ * 画像から抽出したレシピを登録
+ */
+export async function createRecipeFromImage(
+  formData: FormData
+): Promise<RecipeResult> {
+  const user = await getCurrentUser()
+  if (!user) {
+    return {
+      success: false,
+      error: 'ログインが必要です',
+    }
+  }
+
+  const rawData = {
+    title: formData.get('title') as string,
+    description: formData.get('description') as string,
+    memo: formData.get('memo') as string,
+    ingredients: (formData.get('ingredients') as string)?.trim() || null,
+    instructions: (formData.get('instructions') as string)?.trim() || null,
+  }
+
+  // バリデーション
+  if (!rawData.title) {
+    return {
+      success: false,
+      error: 'タイトルを入力してください',
+    }
+  }
+
+  const supabase = await createClient()
+
+  // レシピ登録
+  const { data: recipe, error } = await supabase
+    .from('recipes')
+    .insert({
+      user_id: user.id,
+      title: rawData.title,
+      url: null,
+      image_url: null,
+      description: rawData.description || null,
+      memo: rawData.memo || null,
+      is_manual: true, // 画像から登録したレシピも手動入力扱い
+      ingredients: rawData.ingredients,
+      instructions: rawData.instructions,
+    } as RecipeInsert)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('レシピ登録エラー:', error)
+    return {
+      success: false,
+      error: 'レシピの登録に失敗しました',
+    }
+  }
+
+  revalidatePath('/')
+  return {
+    success: true,
+    recipe: {
+      id: recipe.id,
+      title: recipe.title,
+    },
+  }
+}
+
+/**
  * レシピ一覧を取得
  */
 export async function getRecipes() {
