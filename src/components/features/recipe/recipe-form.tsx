@@ -18,6 +18,7 @@ import {
   type RecipeResult,
 } from '@/services/recipes'
 import { extractRecipeFromImage, type ExtractedRecipeData } from '@/services/vision'
+import { uploadRecipeImage } from '@/services/storage'
 import type { OGPData } from '@/services/ogp'
 import { Link2, FileText, Loader2, ExternalLink, ImageOff, Camera } from 'lucide-react'
 import { toast } from 'sonner'
@@ -76,6 +77,20 @@ export function RecipeForm({ onSuccess }: RecipeFormProps) {
     RecipeResult,
     FormData
   >(async (_prevState, formData) => {
+    // 画像をアップロード
+    let imageUrl: string | null = null
+    if (compressedImageDataUrl) {
+      const uploadResult = await uploadRecipeImage(compressedImageDataUrl)
+      if (uploadResult.success && uploadResult.imageUrl) {
+        imageUrl = uploadResult.imageUrl
+        // FormDataに画像URLを追加
+        formData.set('imageUrl', imageUrl)
+      } else {
+        toast.error(uploadResult.error || '画像のアップロードに失敗しました')
+        // 画像アップロード失敗時も登録は続行（画像なしで登録）
+      }
+    }
+
     const result = await createRecipeFromImage(formData)
     if (result.success) {
       toast.success(`「${result.recipe?.title}」を登録しました`)
@@ -202,7 +217,7 @@ export function RecipeForm({ onSuccess }: RecipeFormProps) {
       </CardHeader>
       <CardContent>
         {/* モード切り替えタブ */}
-        <div className="mb-6 flex gap-2">
+        <div className="mb-6 flex flex-col sm:flex-row gap-2">
           <Button
             type="button"
             variant={mode === 'url' ? 'default' : 'outline'}
@@ -370,19 +385,24 @@ export function RecipeForm({ onSuccess }: RecipeFormProps) {
         {mode === 'image' && (
           <div className="space-y-4">
             {/* ファイル選択 */}
-            <div className="space-y-2">
-              <label htmlFor="image-file" className="text-sm font-medium">
-                レシピ画像を選択
+            <div className="space-y-3">
+              <label htmlFor="image-file" className="block text-sm font-semibold text-gray-900">
+                📷 レシピ画像を選択
               </label>
-              <Input
-                id="image-file"
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleImageSelect}
-                disabled={isExtracting || imagePending}
-              />
+              <div className="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4 hover:border-gray-400 transition-colors">
+                <Input
+                  id="image-file"
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  disabled={isExtracting || imagePending}
+                  className="cursor-pointer file:mr-4 file:rounded-md file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
+                />
+                <p className="mt-2 text-xs text-gray-500">
+                  カメラで撮影、またはギャラリーから選択してください
+                </p>
+              </div>
             </div>
 
             {/* 画像プレビュー */}

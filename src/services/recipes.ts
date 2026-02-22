@@ -212,6 +212,7 @@ export async function createRecipeFromImage(
     memo: formData.get('memo') as string,
     ingredients: (formData.get('ingredients') as string)?.trim() || null,
     instructions: (formData.get('instructions') as string)?.trim() || null,
+    imageUrl: formData.get('imageUrl') as string | null,
   }
 
   // バリデーション
@@ -231,7 +232,7 @@ export async function createRecipeFromImage(
       user_id: user.id,
       title: rawData.title,
       url: null,
-      image_url: null,
+      image_url: rawData.imageUrl || null,
       description: rawData.description || null,
       memo: rawData.memo || null,
       is_manual: true, // 画像から登録したレシピも手動入力扱い
